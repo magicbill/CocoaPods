@@ -1,5 +1,3 @@
-require 'spec_helper/temporary_directory'
-
 module SpecHelper
   def self.tmp_repos_path
     TemporaryRepos.tmp_repos_path
@@ -9,46 +7,100 @@ module SpecHelper
     extend Pod::Executable
     executable :git
 
+    # @return [Pathname] The path for the repo with the given name.
+    #
+    def repo_path(name)
+      tmp_repos_path + name
+    end
+
+    # Makes a repo with the given name.
+    #
+    def repo_make(name)
+      path = repo_path(name)
+      path.mkpath
+      Dir.chdir(path) do
+        `git init`
+        repo_make_readme_change(name, 'Added')
+        `git add .`
+        `git commit -m "Initialized."`
+      end
+      path
+    end
+
+    # Clones a repo to the given name.
+    #
+    def repo_clone(from_name, to_name)
+      Dir.chdir(tmp_repos_path) { `git clone #{from_name} #{to_name} 2>&1 > /dev/null` }
+      repo_path(to_name)
+    end
+
+    def repo_make_readme_change(name, string)
+      file = repo_path(name) + 'README'
+      file.open('w') { |f| f << "#{string}" }
+    end
+
+    #--------------------------------------#
+
+    def test_repo_path
+      repo_path('master')
+    end
+
+    # Sets up a lighweight master repo in `tmp/cocoapods/repos/master` with the
+    # contents of `spec/fixtures/spec-repos/test_repo`.
+    #
+    def set_up_test_repo
+      require 'fileutils'
+      test_repo_path.mkpath
+      origin = ROOT + 'spec/fixtures/spec-repos/test_repo/.'
+      destination = tmp_repos_path + 'master'
+      FileUtils.cp_r(origin, destination)
+      FileUtils.rm_r(destination + './.git')
+      repo_make('master')
+    end
+
+    def test_old_repo_path
+      repo_path('../master')
+    end
+
+    # Sets up a lighweight master repo in `tmp/cocoapods/master` with the
+    # contents of `spec/fixtures/spec-repos/test_repo`.
+    #
+    def set_up_old_test_repo
+      require 'fileutils'
+      test_old_repo_path.mkpath
+      origin = ROOT + 'spec/fixtures/spec-repos/test_repo/.'
+      destination = tmp_repos_path + '../master'
+      FileUtils.cp_r(origin, destination)
+      FileUtils.rm_r(destination + './.git')
+      repo_make('../master')
+    end
+
+    #--------------------------------------#
+
     def tmp_repos_path
-      SpecHelper.temporary_directory + 'cocoapods'
-    end
-    module_function :tmp_repos_path
-
-    alias_method :git_super, :git
-    def git(repo, command)
-      Dir.chdir(tmp_repos_path + repo) do
-        if output = git_super(command)
-          output.strip
-        end
-      end
+      TemporaryRepos.tmp_repos_path
     end
 
-    def git_config(repo, attr)
-      git repo, "config --get #{attr}"
-    end
-
-    def add_repo(name, from)
-      command = command('repo', 'add', name, from)
-      command.run
-      # The test branch is used by the push specs
-      Dir.chdir(command.dir) do
-        `git checkout -b test >/dev/null 2>&1`
-        `git branch --set-upstream test origin/master >/dev/null 2>&1`
-      end
-      command
-    end
-
-    def make_change(repo, name)
-      (repo.dir + 'README').open('w') { |f| f << 'Added!' }
-      git(name, 'add README')
-      git(name, 'commit -m "changed"')
+    def self.tmp_repos_path
+      SpecHelper.temporary_directory + 'cocoapods/repos'
     end
 
     def self.extended(base)
+      # Make Context methods available
+      # WORKAROUND: Bacon auto-inherits singleton methods to child contexts
+      # by using the runtime and won't include methods in modules included
+      # by the parent context. We have to ensure that the methods will be
+      # accessible by the child contexts by defining them as singleton methods.
+      TemporaryRepos.instance_methods.each do |method|
+        unbound_method = base.method(method).unbind
+        base.define_singleton_method method do |*args, &b|
+          unbound_method.bind(self).call(*args, &b)
+        end
+      end
+
       base.before do
         tmp_repos_path.mkpath
       end
     end
   end
 end
-

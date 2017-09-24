@@ -1,43 +1,31 @@
 require File.expand_path('../../../spec_helper', __FILE__)
 
-describe "Pod::Command::List" do
-  extend SpecHelper::TemporaryRepos
+module Pod
+  describe 'Command::List' do
+    extend SpecHelper::TemporaryRepos
 
-  def command(arguments = argv)
-    command = Pod::Command::List.new(arguments)
-  end
+    before do
+      set_up_test_repo
+      config.repos_dir = SpecHelper.tmp_repos_path
+    end
 
-  it "complains for wrong parameters" do
-    lambda { command(argv('wrong')).run }.should.raise Pod::Command::Help
-    lambda { command(argv('--wrong')).run }.should.raise Pod::Command::Help
-  end
+    it 'presents the known pods' do
+      out = run_command('list')
+      [/BananaLib/,
+       /JSONKit/,
+       /\d+ pods were found/,
+      ].each { |regex| out.should =~ regex }
+    end
 
-  it "presents the known pods" do
-    list = command()
-    list.run
-    [ /ZBarSDK/,
-      /TouchJSON/,
-      /SDURLCache/,
-      /MagicalRecord/,
-      /A2DynamicDelegate/,
-      /\d+ pods were found/
-    ].each { |regex| Pod::UI.output.should =~ regex }
-  end
+    it 'presents the known pods with versions' do
+      sets = config.sources_manager.aggregate.all_sets
+      jsonkit_set = sets.find { |s| s.name == 'JSONKit' }
 
-  it "returns the new pods" do
-    Time.stubs(:now).returns(Time.mktime(2012,2,3))
-    list = command(argv('new'))
-    list.run
-    [ 'iCarousel',
-      'libPusher',
-      'SSCheckBoxView',
-      'KKPasscodeLock',
-      'SOCKit',
-      'FileMD5Hash',
-      'cocoa-oauth',
-      'iRate'
-    ].each {|s| Pod::UI.output.should.include s }
+      out = run_command('list')
+      [/BananaLib 1.0/,
+       /JSONKit #{jsonkit_set.versions.first}/,
+       /\d+ pods were found/,
+      ].each { |regex| out.should =~ regex }
+    end
   end
 end
-
-
